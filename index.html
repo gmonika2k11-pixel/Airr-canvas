@@ -1,0 +1,100 @@
+// ... Keep your HTML and CSS the exact same ...
+
+const video = document.getElementById('webcam');
+const canvas = document.getElementById('paintCanvas');
+const ctx = canvas.getContext('2d');
+const statusDiv = document.getElementById('status');
+
+let brushColor = 'red';
+let brushThickness = 8;
+let lastX = 0, lastY = 0;
+let isDrawing = false;
+
+function resize() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+}
+window.addEventListener('resize', resize);
+resize();
+
+function setColor(color) {
+    if (color === 'erase') {
+        brushColor = '#111';
+        brushThickness = 40;
+    } else {
+        brushColor = color;
+        brushThickness = 8;
+    }
+}
+
+function clearCanvas() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+function onResults(results) {
+    if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+        const hand = results.multiHandLandmarks[0];
+        
+        const indexTip = hand[8];
+        const middleTip = hand[12];
+        const indexPip = hand[6];
+        const middlePip = hand[10];
+
+        const x = indexTip.x * canvas.width;
+        const y = indexTip.y * canvas.height;
+
+        const indexUp = indexTip.y < indexPip.y;
+        const middleUp = middleTip.y < middlePip.y;
+
+        if (indexUp && middleUp) {
+            statusDiv.innerText = "Status: Selection Mode";
+            isDrawing = false;
+        } else if (indexUp && !middleUp) {
+            statusDiv.innerText = "Status: ✍️ Drawing";
+            ctx.strokeStyle = brushColor;
+            ctx.lineWidth = brushThickness;
+            
+            if (!isDrawing) {
+                isDrawing = true;
+                lastX = x;
+                lastY = y;
+            }
+            
+            ctx.beginPath();
+            ctx.moveTo(lastX, lastY);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            
+            lastX = x;
+            lastY = y;
+        }
+    } else {
+        statusDiv.innerText = "Status: No hand detected";
+        isDrawing = false;
+    }
+}
+
+// 🔥 SPEED OPTIMIZATION STARTS HERE
+const hands = new Hands({
+    locateFile: (file) => `https://jsdelivr.net{file}`
+});
+
+hands.setOptions({
+    maxNumHands: 1,            // Stops looking for a 2nd hand entirely
+    modelComplexity: 0,        // ⚡ CHANGES FROM 1 TO 0 (Loads a lightweight, faster mobile model)
+    minDetectionConfidence: 0.5, // ⚡ Lowers initial scan effort to prevent load hang-ups
+    minTrackingConfidence: 0.5   // ⚡ Reduces background processing latency while tracing lines
+});
+hands.onResults(onResults);
+
+const camera = new Camera(video, {
+    onFrame: async () => {
+        await hands.send({image: video});
+    },
+    // ⚡ Shrinks camera resolution slightly so the processor handles less raw pixel data
+    width: 640,
+    height: 480
+});
+camera.start();
